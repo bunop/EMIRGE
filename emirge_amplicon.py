@@ -1,5 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
+
+Updated on ven  4 apr 2014, 15.25.03, CEST
+
+Cerco di cambiare il codice di emirge per utilizzare bwa al posto di bowtie
+
 EMIRGE: Expectation-Maximization Iterative Reconstruction of Genes from the Environment
 Copyright (C) 2010-2012 Christopher S. Miller  (christopher.s.miller@ucdenver.edu)
 
@@ -62,10 +69,12 @@ import _emirge_amplicon as _emirge
 # from ctrie import Trie
 # from pykseq import Kseq
 
-BOWTIE_l = 20
-BOWTIE_e  = 300
+#Questi parametri servono per bowtie, ma a bwa non servono
+#BOWTIE_l = 20
+#BOWTIE_e  = 300
 
-BOWTIE_ASCII_OFFSET = 33   # currently, bowtie writes quals with an ascii offset of 33
+#BOWTIE_ASCII_OFFSET = 33   # currently, bowtie writes quals with an ascii offset of 33
+BWA_ASCII_OFFSET = 33   # Anche BWA dovrebbe lavorare cosi
 
 
 class Record:
@@ -129,7 +138,7 @@ class EM(object):
                  rewrite_reads = True):
         """
 
-        n_cpus is how many processors to use for multithreaded steps (currently only the bowtie mapping)
+        n_cpus is how many processors to use for multithreaded steps (currently only the bwa mapping)
         mapping_nice is nice value to add to mapping program
         """
         self.reads1_filepath = reads1_filepath
@@ -331,7 +340,7 @@ class EM(object):
         #       self.sequence_i2sequence_name
         #       self.bamfile_data  numpy array with (seq_i, read_i, pair_i, rlen, pos, is_reverse)
 
-        _emirge.process_bamfile(self, BOWTIE_ASCII_OFFSET)
+        _emirge.process_bamfile(self, BWA_ASCII_OFFSET)
 
         self.n_sequences = len(self.sequence_name2sequence_i)
 
@@ -384,7 +393,7 @@ class EM(object):
         self.read_bam(bam_filename, reference_fasta_filename)
 
         # initialize priors.  Here just adding a count for each read mapped to each reference sequence
-        # since bowtie run with --best and reporting just 1 alignment at random, there is some stochasticity here.
+        # since bwa run with --best and reporting just 1 alignment at random, there is some stochasticity here.
         for (seq_i, read_i, pair_i, rlen, pos, is_reverse) in self.bamfile_data:
             # if self.probN[seq_i] is not None:
             self.priors[-1][seq_i] += 1
@@ -976,39 +985,42 @@ class EM(object):
         """
         IN:  path of fasta file to map reads to
         run external mapping program to produce bam file
-        right now this is bowtie
+        right now this is bwa
 
         should also set self.n_alignments and self.current_bam_filename
         """
         if self._VERBOSE:
             sys.stderr.write("Starting read mapping for iteration %d at %s...\n"%(self.iteration_i, ctime()))
             start_time = time()
-
-        self.do_mapping_bowtie(full_fasta_path, nice = nice)
+            
+        self.do_mapping_bwa(full_fasta_path, nice = nice)
 
         if self._VERBOSE:
             sys.stderr.write("DONE with read mapping for iteration %d at %s [%s]...\n"%(self.iteration_i, ctime(), timedelta(seconds = time()-start_time)))
         return
-    def do_mapping_bowtie(self, full_fasta_path, nice = None):
+    def do_mapping_bwa(self, full_fasta_path, nice = None):
         """
-        run bowtie to produce bam file for next iteration
+        run bwa to produce bam file for next iteration
 
         sets self.n_alignments
         sets self.current_bam_filename
         """
-        bowtie_index   = os.path.join(self.iterdir, "bowtie.index.iter.%02d"%(self.iteration_i))
-        bowtie_logfile = os.path.join(self.iterdir, "bowtie.iter.%02d.log"%(self.iteration_i))
+        bwa_index   = os.path.join(self.iterdir, "bwa.index.iter.%02d"%(self.iteration_i))
+        bwa_logfile = os.path.join(self.iterdir, "bwa.iter.%02d.log"%(self.iteration_i))
+        
         # 1. build index
-        cmd = "bowtie-build -o 3 %s %s > %s"%(full_fasta_path , bowtie_index, bowtie_logfile) # -o 3 for speed? magnitude of speedup untested!
+        #cmd = "bowtie-build -o 3 %s %s > %s"%(full_fasta_path , bowtie_index, bowtie_logfile) # -o 3 for speed? magnitude of speedup untested!
+        cmd = "bwa index -p %s %s > %s" %(bwa_index, full_fasta_path, bwa_logfile)
+        
         # note: just send stdout to log file, as stderr captured in emirge stderr
         if self._VERBOSE:
-            sys.stderr.write("\tbowtie-build command:\n")
+            sys.stderr.write("\tbwa index command:\n")
             sys.stderr.write("\t%s\n"%cmd)
         check_call(cmd, shell=True, stdout = sys.stdout, stderr = sys.stderr)
         sys.stdout.flush()
         sys.stderr.flush()
 
-        # 2. run bowtie
+        # 2. run bwa
         nicestring = ""
         if nice is not None:
             nicestring = "nice -n %d"%(nice)
@@ -1019,71 +1031,76 @@ class EM(object):
             cat_cmd = "cat "
 
         # these are used for single reads too.
-        shared_bowtie_params = "--phred%d-quals -t -p %s  -n 3 -l %s -e %s  --best --strata --all --sam --chunkmbs 128"%(self.reads_ascii_offset, self.n_cpus, BOWTIE_l, BOWTIE_e)
+        #shared_bowtie_params = "--phred%d-quals -t -p %s  -n 3 -l %s -e %s  --best --strata --all --sam --chunkmbs 128"%(self.reads_ascii_offset, self.n_cpus, BOWTIE_l, BOWTIE_e)
+        
+        #Questi paremetri sono suggeriti da questa discussione
+        shared_bwa_params = "-t %s -P -a" %(self.n_cpus)
 
         minins = max((self.insert_mean - 3*self.insert_sd), self.max_read_length)
         maxins = self.insert_mean + 3*self.insert_sd
-        output_prefix = os.path.join(self.iterdir, "bowtie.iter.%02d"%(self.iteration_i))
+        output_prefix = os.path.join(self.iterdir, "bwa.iter.%02d"%(self.iteration_i))
         output_filename = "%s.PE.u.bam"%output_prefix
         samtools_cmd    = "samtools view -S -h -u -b -F 0x0004 -"  # -F instead of piping to awk?    |  awk '{if ($3!="*") print }'
 
         if self.reads2_filepath is not None:
-            bowtie_command = """%s %s | %s bowtie %s --minins %d --maxins %d %s -1 - -2 %s | %s > %s"""%(\
-                cat_cmd,
-                self.reads1_filepath,
-                nicestring,
-                shared_bowtie_params,
-                minins, maxins,
-                bowtie_index,
-                self.reads2_filepath,
-                samtools_cmd,
-                output_filename)
+#            bowtie_command = """%s %s | %s bowtie %s --minins %d --maxins %d %s -1 - -2 %s | %s > %s"""%(\
+#                cat_cmd,
+#                self.reads1_filepath,
+#                nicestring,
+#                shared_bowtie_params,
+#                minins, maxins,
+#                bowtie_index,
+#                self.reads2_filepath,
+#                samtools_cmd,
+#                output_filename)
+            bwa_command = "{nicestring} bwa mem {shared_bwa_params} {bwa_index} {reads1_filepath} {reads2_filepath} | {samtools_cmd} > {output_filename}".format(nicestring=nicestring, shared_bwa_params=shared_bwa_params, bwa_index=bwa_index, reads1_filepath=self.reads1_filepath, reads2_filepath=self.reads2_filepath, samtools_cmd=samtools_cmd, output_filename=output_filename)
         else: # single reads
-            bowtie_command = """%s %s | %s bowtie %s %s - | %s > %s"""%(\
-                cat_cmd,
-                self.reads1_filepath,
-                nicestring,
-                shared_bowtie_params,
-                bowtie_index,
-                samtools_cmd,
-                output_filename)
+#            bowtie_command = """%s %s | %s bowtie %s %s - | %s > %s"""%(\
+#                cat_cmd,
+#                self.reads1_filepath,
+#                nicestring,
+#                shared_bowtie_params,
+#                bowtie_index,
+#                samtools_cmd,
+#                output_filename)
+            bwa_command = "{nicestring} bwa mem {shared_bwa_params} {bwa_index} {reads1_filepath} | {samtools_cmd} > {output_filename}".format(nicestring=nicestring, shared_bwa_params=shared_bwa_params, bwa_index=bwa_index, reads1_filepath=self.reads1_filepath, samtools_cmd=samtools_cmd, output_filename=output_filename)
 
         if self._VERBOSE:
-            sys.stderr.write("\tbowtie command:\n")
-            sys.stderr.write("\t%s\n"%bowtie_command)
+            sys.stderr.write("\tbwa command:\n")
+            sys.stderr.write("\t%s\n"%bwa_command)
 
-        p = Popen(bowtie_command, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
+        p = Popen(bwa_command, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
         p.wait()
         stderr_string = p.stderr.read()
-        self.n_alignments = self.get_n_alignments_from_bowtie(stderr_string)
-        # re-print this to stdout, since we stole it from bowtie
+        self.n_alignments = self.get_n_alignments_from_bwa(stderr_string)
+        # re-print this to stdout, since we stole it from bwa
         sys.stdout.write(stderr_string)
         sys.stdout.flush()
-        # and now put in separate bowtie logfile
-        of = open(bowtie_logfile, 'w')
-        of.write("\nBOWTIE STDERR:\n")
+        # and now put in separate bwa logfile
+        of = open(bwa_logfile, 'w')
+        of.write("\nBWA STDERR:\n")
         of.write(stderr_string)
         of.write("\n")
         of.close()
 
         if self._VERBOSE:
-            sys.stderr.write("\tFinished Bowtie for iteration %02d at %s:\n"%(self.iteration_i, ctime()))
+            sys.stderr.write("\tFinished BWA for iteration %02d at %s:\n"%(self.iteration_i, ctime()))
 
         # 3. clean up
         # check_call("samtools index %s.sort.PE.bam"%(output_prefix), shell=True, stdout = sys.stdout, stderr = sys.stderr)
-        if os.path.exists(bowtie_logfile):
-            check_call("gzip -f %s"%(bowtie_logfile), shell=True)
+        if os.path.exists(bwa_logfile):
+            check_call("gzip -f %s"%(bwa_logfile), shell=True)
 
         assert self.iterdir != '/'
         for filename in os.listdir(self.iterdir):
-            assert(len(os.path.basename(bowtie_index)) >= 20)  # weak check that I'm not doing anything dumb.
-            if os.path.basename(bowtie_index) in filename:
+            assert(len(os.path.basename(bwa_index)) >= 20)  # weak check that I'm not doing anything dumb.
+            if os.path.basename(bwa_index) in filename:
                 os.remove(os.path.join(self.iterdir, filename))
 
         self.current_bam_filename = output_filename   # do this last.
 
         return
-    def get_n_alignments_from_bowtie(self, stderr_string):
+    def get_n_alignments_from_bwa(self, stderr_string):
         """
         IN:  stderr output string from bowtie
         OUT: does some re to get number of unique reads mapped,
@@ -1099,6 +1116,8 @@ class EM(object):
         # reads that failed to align: 177430 (19.76%)
         Reported 19244466 paired-end alignments to 1 output stream(s)
         """
+        
+        #FIXME: probabilmente questa funzione non funzionerà più
         try:
             r = re.findall(r'Reported ([0-9]+) (paired-end )?alignments', stderr_string)
             if r[0][1] != '': # "paired-end" string matched -- two lines in samfile per paired-end aln
@@ -1106,7 +1125,7 @@ class EM(object):
             else:             # single-end -- one line in samfile per alignment
                 return int(r[0][0])
         except IndexError:
-            print >> sys.stderr, "OOPS, we didn't get number of reads from bowtie:"
+            print >> sys.stderr, "OOPS, we didn't get number of reads from bwa:"
             print >> sys.stderr, stderr_string
             print >> sys.stderr, r
             raise
@@ -1175,7 +1194,7 @@ def do_iterations(em, max_iter, save_every):
     an EM object is passed in, so that one could in theory start from a saved state
     this should be moved into the EM object.
     """
-    bamfile_template = "bowtie.iter.%02d.PE.u.bam"
+    bamfile_template = "bwa.iter.%02d.PE.u.bam"
     os.chdir(em.cwd)
 
     em.max_iterations = max_iter
@@ -1216,7 +1235,7 @@ def do_initial_mapping(em, working_dir, options):
     """
     IN:  takes the em object, working directory and an OptionParser options object
 
-    does the initial 1-reference-per-read bowtie mapping to initialize the algorithm
+    does the initial 1-reference-per-read bwa mapping to initialize the algorithm
     OUT:  path to the bam file from this initial mapping
 
     TODO:  move this to em method.  A bit clumsy right now.
@@ -1227,7 +1246,7 @@ def do_initial_mapping(em, working_dir, options):
 
     minins = max((options.insert_mean - 3*options.insert_stddev), options.max_read_length)
     maxins = options.insert_mean + 3*options.insert_stddev
-    bampath_prefix = os.path.join(initial_mapping_dir, "initial_bowtie_mapping.PE")
+    bampath_prefix = os.path.join(initial_mapping_dir, "initial_bwa_mapping.PE")
 
     nicestring = ""
     if options.nice_mapping is not None:
@@ -1238,23 +1257,30 @@ def do_initial_mapping(em, working_dir, options):
     else:
         option_strings = ["cat "]
     # shared regardless of whether paired mapping or not
-    option_strings.extend([options.fastq_reads_1, nicestring, reads_ascii_offset, options.processors, BOWTIE_l, BOWTIE_e])
+    #option_strings.extend([options.fastq_reads_1, nicestring, reads_ascii_offset, options.processors, BOWTIE_l, BOWTIE_e])
+    option_strings.extend([options.fastq_reads_1, nicestring, reads_ascii_offset, options.processors])
     samtools_cmd    = "samtools view -S -h -u -b -F 0x0004 -"  # -F instead of piping to awk?    |  awk '{if ($3!="*") print }'
+    
+    shared_bwa_params = "-t %s -P -a" %(options.processors)
 
     # PAIRED END MAPPING
     if options.fastq_reads_2 is not None:
-        option_strings.extend([minins, maxins, options.bowtie_db, options.fastq_reads_2, samtools_cmd, bampath_prefix])
-        cmd = """%s %s | %s bowtie --phred%d-quals -t -p %s -n 3 -l %s -e %s --best --sam --chunkmbs 128 --minins %s --maxins %s %s -1 - -2 %s | %s > %s.u.bam """%tuple(option_strings)
+        option_strings.extend([minins, maxins, options.bwa_db, options.fastq_reads_2, samtools_cmd, bampath_prefix])
+        #cmd = """%s %s | %s bowtie --phred%d-quals -t -p %s -n 3 -l %s -e %s --best --sam --chunkmbs 128 --minins %s --maxins %s %s -1 - -2 %s | %s > %s.u.bam """%tuple(option_strings)
+        cmd = "{nicestring} bwa mem {shared_bwa_params} {bwa_index} {reads1_filepath} {reads2_filepath} | {samtools_cmd} > {output_filename}.u.bam".format(nicestring=nicestring, shared_bwa_params=shared_bwa_params, bwa_index=options.bwa_db, reads1_filepath=options.fastq_reads_1, reads2_filepath=options.fastq_reads_2, samtools_cmd=samtools_cmd, output_filename=bampath_prefix)
+        
     # SINGLE END MAPPING
     else:
         option_strings.extend([options.bowtie_db, samtools_cmd, bampath_prefix])
-        cmd = """%s %s | %s bowtie --phred%d-quals -t -p %s -n 3 -l %s -e %s --best --sam --chunkmbs 128  %s - | %s > %s.u.bam """%tuple(option_strings)
+        #Correggo anche questa opzione ma non la garantisco
+        #cmd = """%s %s | %s bowtie --phred%d-quals -t -p %s -n 3 -l %s -e %s --best --sam --chunkmbs 128  %s - | %s > %s.u.bam """%tuple(option_strings)
+        cmd = "{nicestring} bwa mem {shared_bwa_params} {bwa_index} {reads1_filepath} | {samtools_cmd} > {output_filename}.u.bam".format(nicestring=nicestring, shared_bwa_params=shared_bwa_params, bwa_index=options.bwa_db, reads1_filepath=options.fastq_reads_1, samtools_cmd=samtools_cmd, output_filename=bampath_prefix)
 
     sys.stderr.write("Performing initial mapping with command:\n%s\n"%cmd)
     p = Popen(cmd, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
     p.wait()
     stderr_string = p.stderr.read()
-    em.n_alignments = em.get_n_alignments_from_bowtie(stderr_string)
+    em.n_alignments = em.get_n_alignments_from_bwa(stderr_string)
     # re-print this to stdout, since we stole it.
     sys.stdout.write(stderr_string)
     sys.stdout.flush()
@@ -1347,9 +1373,9 @@ def main(argv = sys.argv[1:]):
     group_reqd.add_option("-f", "--fasta_db",
                       type="string",
                       help="path to fasta file of candidate SSU sequences")
-    group_reqd.add_option("-b", "--bowtie_db",
+    group_reqd.add_option("-b", "--bwa_db",
                       type="string",
-                      help="precomputed bowtie index of candidate SSU sequences (path to appropriate prefix; see --fasta_db)")
+                      help="precomputed bwa index of candidate SSU sequences (path to appropriate prefix; see --fasta_db)")
     group_reqd.add_option("-l", "--max_read_length",
                       type="int", default=0,
                       help="""length of longest read in input data.""")
@@ -1429,7 +1455,7 @@ def main(argv = sys.argv[1:]):
     parser.add_option_group(group_opt)
     # # RESUME
     group_resume = OptionGroup(parser, "Resuming iterations",
-                              "These options allow you to resume from a previously interrupted run.  EMIRGE will look for the last good iteration and begin with the candidate SSU sequences and priors (current abundance estimates) from that iteration.  Currently, there is only one option associate with resuming iterations: --resume.  The following options cannot be changed from the inital command, and if supplied with --resume, are ignored: -1, -2, --fasta_db, --bowtie_db, --mapping")
+                              "These options allow you to resume from a previously interrupted run.  EMIRGE will look for the last good iteration and begin with the candidate SSU sequences and priors (current abundance estimates) from that iteration.  Currently, there is only one option associate with resuming iterations: --resume.  The following options cannot be changed from the inital command, and if supplied with --resume, are ignored: -1, -2, --fasta_db, --bwa_db, --mapping")
     group_resume.add_option("-r", "--resume", action="store_true",
                             help="Resume iterations with the priors and current SSU sequences from the last succesful iteration.")
     # parser.add_option_group(group_resume)
@@ -1497,7 +1523,7 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
     # NORMAL case
     else:
         # below here, means that we are handling the NEW case (as opposed to resume)
-        required = ["fastq_reads_1", "fasta_db", "bowtie_db", "max_read_length"]
+        required = ["fastq_reads_1", "fasta_db", "bwa_db", "max_read_length"]
         if options.fastq_reads_2 is not None:
             if  options.fastq_reads_2.endswith('.gz'):
                 parser.error("Read 2 file cannot be gzipped (see --help)")
@@ -1505,11 +1531,11 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
 
         for o in required:
             if getattr(options, o) is None or getattr(options, o) == 0:
-                if o == 'bowtie_db':
+                if o == 'bwa_db':
                     if options.fasta_db:
-                        parser.error("Bowtie index is missing (--bowtie_db). You need to build it before running EMIRGE\nTry:\n\nbowtie-build %s bowtie_prefix" % options.fasta_db)
+                        parser.error("BWA index is missing (--bwa_db). You need to build it before running EMIRGE\nTry:\n\nbwa index %s bwa_prefix" % options.fasta_db)
                     else:
-                        parser.error("Bowtie index is missing (--bowtie_db). You need to build it before running EMIRGE\nTry:\n\nbowtie-build candidate_db.fasta bowtie_prefix")
+                        parser.error("BWA index is missing (--bwa_db). You need to build it before running EMIRGE\nTry:\n\nbwa-build candidate_db.fasta bwa_prefix")
                 elif o == 'fasta_db':
                     parser.error("Fasta file for candidate database is missing. Specify --fasta_db. (try --help for more information)")
                 else:
@@ -1524,7 +1550,7 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
                 parser.error("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one."%working_dir)
 
     # clean up options to be absolute paths
-    for o in ["fastq_reads_1", "fastq_reads_2", "fasta_db", "bowtie_db", "mapping"]:
+    for o in ["fastq_reads_1", "fastq_reads_2", "fasta_db", "bwa_db", "mapping"]:
         current_o_value = getattr(options, o)
         if current_o_value is not None:
             setattr(options, o, os.path.abspath(current_o_value))
