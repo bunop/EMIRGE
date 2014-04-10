@@ -226,7 +226,10 @@ def _calc_probN(em):
         convert_t0 = time()
         em.posteriors[-2] = em.posteriors[-2].tocsr()
         em.posteriors[-2].sort_indices()
-        # print >> sys.stderr, "DEBUG: Time for conversion of posterios to csr sparse matrix: %s"%(timedelta(seconds = time() - convert_t0))
+        
+        #debug
+        print >> sys.stderr, "DEBUG: Time for conversion of posterios to csr sparse matrix: %s"%(timedelta(seconds = time() - convert_t0))
+        
         posteriors = em.posteriors[-2]  # this depends on PREVIOUS iteration's posteriors (seq_n x read_n)
         posteriors_data = posteriors.data
         posteriors_indices = posteriors.indices
@@ -270,16 +273,38 @@ def _calc_probN(em):
         if em.probN[seq_i] is None:
             dead_seqs[seq_i] = 1
 
-    # print >> sys.stderr, "DEBUG: t_check 1: %s"%(timedelta(seconds = time() - t_check))
+    #debug
+#    print >> sys.stderr, "probN:"
+#    
+#    for tmp_i, tmp_line in enumerate(probN):
+#        print >> sys.stderr, tmp_i, tmp_line 
+    
+    print >> sys.stderr, "DEBUG: len(probN): %s" %(len(probN))
+    print >> sys.stderr, "DEBUG: len(dead_seqs): %s" %(len(dead_seqs))
+    print >> sys.stderr, "DEBUG: t_check 1: %s"%(timedelta(seconds = time() - t_check))
 
     loop_t0 = time()
+    
+    print >> sys.stderr, "DEBUG: bamfile_data.shape[0]: %s" %(bamfile_data.shape[0])
+    
+    #unizializzo per non vedere un warning
+    alignedread_i = 0
+    
     for alignedread_i in range(bamfile_data.shape[0]):
         #   0       1       2      3     4       5   # "efficient indexing only affects certain index operations, namely those with exactly ndim number of typed integer indices”
         # seq_i, read_i, pair_i, rlen, pos, is_reverse = bamfile_data[alignedread_i]
         seq_i = bamfile_data[alignedread_i, 0]
 
+#        print >> sys.stderr, "DEBUG: Sono stato qui (1): %s" %(alignedread_i)
+#        sys.stderr.flush()
+
         if dead_seqs[seq_i]:  # probN is None -- just culled.
+#            print >> sys.stderr, "DEBUG: Salto (1): %s" %(alignedread_i)
+#            sys.stderr.flush()
             continue
+
+#        print >> sys.stderr, "DEBUG: Sono stato qui (2): %s" %(alignedread_i)
+#        sys.stderr.flush()
 
         read_i = bamfile_data[alignedread_i, 1]
         pair_i = bamfile_data[alignedread_i, 2]
@@ -287,6 +312,14 @@ def _calc_probN(em):
         pos = bamfile_data[alignedread_i, 4]
         is_reverse= bamfile_data[alignedread_i, 5]
 
+        #debug
+        
+        #debug: stampo solo le prima 20 informazioni
+        #if alignedread_i < 20:
+        #if read_i == 1195:
+        sys.stderr.write("DEBUG (_calc_probN): processing %s/%s (%s,%s,%s,%s,%s,%s)\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, pair_i, rlen, pos,is_reverse))
+        sys.stderr.flush()
+        
         reads_seen_this_round[read_i] = 1
         # find weight
         if initial_iteration:
@@ -313,8 +346,18 @@ def _calc_probN(em):
                         weight = posteriors_data[mid]
                         break
                 # assert weight == posteriors[seq_i, read_i], "%s vs %s"%(weight, posteriors[seq_i, read_i])  # DEBUG.  Make sure I'm doing this right, since no error checking otherwise
-
-        probN_single = probN[seq_i]
+        
+#        print >> sys.stderr, "DEBUG: Sono stato qui (3): %s" %(alignedread_i)
+#        sys.stderr.flush()
+        
+#        probN_single = probN[seq_i]
+        
+#        try:
+#            print >> sys.stderr, "DEBUG: Sono stato qui (len(probN_single): %s) (4): %s" %(len(probN_single), alignedread_i)
+#        except ValueError, message:
+#            print >> sys.stderr, "DEBUG: Sono stato qui (probN_single: <%s>) (4): %s" %(message, alignedread_i)
+#            
+#        sys.stderr.flush()
         
         if is_reverse:
             # manually inline reverse complement loop here.  It's redundant, but it's all in the name of speed.
@@ -322,20 +365,28 @@ def _calc_probN(em):
                 ii = rlen-1-i # the index to the base given that this seq is reversed
                 for j in range(4):
                     if complement_numeric_base(reads[read_i, pair_i, ii]) == j:   # this is called base, add (1-P) * weight
-                        probN_single[pos + i, j] += ( qual2one_minus_p[quals[read_i, pair_i, ii]] * weight )
+                        probN[seq_i][pos + i, j] += ( qual2one_minus_p[quals[read_i, pair_i, ii]] * weight )
                     else:                       # this is not the called base, so add P/3 * weight
-                        probN_single[pos + i, j] += ( qual2p_div_3[quals[read_i, pair_i, ii]] * weight )
+                        probN[seq_i][pos + i, j] += ( qual2p_div_3[quals[read_i, pair_i, ii]] * weight )
 
         else: # not reverse
             for i in range(rlen):
                 for j in range(4):
                     if reads[read_i, pair_i, i] == j:   # this is called base, add (1-P) * weight
-                        probN_single[pos + i, j] += ( qual2one_minus_p[quals[read_i, pair_i, i]] * weight )
+                        probN[seq_i][pos + i, j] += ( qual2one_minus_p[quals[read_i, pair_i, i]] * weight )
                     else:                       # this is not the called base, so add P/3 * weight
-                        probN_single[pos + i, j] += ( qual2p_div_3[quals[read_i, pair_i, i]] * weight )
+                        probN[seq_i][pos + i, j] += ( qual2p_div_3[quals[read_i, pair_i, i]] * weight )
+                        
+#        print >> sys.stderr, "DEBUG: Sono stato qui (fine): %s" %(alignedread_i)
+#        sys.stderr.flush()
+
+        print >> sys.stderr, "DEBUG: Sono stato qui (len(probN[seq_i]): %s, seq_id = %s) (4): %s" %(len(probN[seq_i]), seq_i, alignedread_i)
+        sys.stderr.flush()
 
     td = timedelta(seconds = time()-loop_t0)
-    # print >> sys.stderr, "DEBUG: iteration %02d _calc_probN time per 1000 bam entries: %.2e seconds"%(em.iteration_i, (((td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / float(10**6)) / alignedread_i) * 1000.0) # DEBUG
+    
+    #debug
+    print >> sys.stderr, "DEBUG: iteration %02d _calc_probN time per 1000 bam entries: %.2e seconds"%(em.iteration_i, (((td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / float(10**6)) / alignedread_i) * 1000.0) # DEBUG
     # print >> sys.stderr, "DEBUG: total loop time (%s bam entries): %s"%(alignedread_i, td)
 
     t_check = time()                    # DEBUG
@@ -386,12 +437,14 @@ def _calc_probN(em):
                     probN_single[i, j] = probN_single[i, j] / base_sum
         em.unmapped_bases[seq_i] = unmapped_bases.copy()
 
-    # print >> sys.stderr, "DEBUG: t_check 2: %s"%(timedelta(seconds = time() - t_check))
+    #debug
+    print >> sys.stderr, "DEBUG: t_check 2: %s"%(timedelta(seconds = time() - t_check))
     t_check = time()                    # DEBUG
 
     reads_seen |= reads_seen_this_round  # logical or equals, i.e. update newly seen reads this round
 
-    # print >> sys.stderr, "DEBUG: t_check 3: %s"%(timedelta(seconds = time() - t_check))
+    #debug
+    print >> sys.stderr, "DEBUG: t_check 3: %s"%(timedelta(seconds = time() - t_check))
     return
 
 # will I want to add @cython.boundscheck(False) ?
@@ -523,7 +576,14 @@ def populate_reads_arrays(em):
                 readlengths[read_index] = ks_p.seq.l
                 for i in range(0, ks_p.seq.l):
                     reads[read_index, readtype_index, i] = base_alpha2int(ks_p.seq.s[i])
+                    
+                    #Con bowtie 1.0.1, tutte le qualità sembrano essere 255
                     quals[read_index, readtype_index, i] = ks_p.qual.s[i] - ascii_offset
+                    
+                    #Debug
+#                    sys.stderr.write("DEBUG (populate_reads_arrays): quals[%s, %s, %s] = %s\n" %(read_index, readtype_index, i, quals[read_index, readtype_index, i]))
+#                    sys.stderr.flush()
+                    
                 read_index += 1
         
     return
@@ -573,6 +633,9 @@ def process_bamfile(em, int ascii_offset):
     samfile_references = np.array(bamfile.references)  # faster to slice numpy array
     samfile_lengths    = np.array(bamfile.lengths)  # faster to slice numpy array
 
+    #la variabile dove segno la lunghezza della mia sequenza
+    cdef unsigned int t_length
+
     # go through header here and create mapping between reference tid
     # (in each alignedread) and my internal seq_i.  If a new seq_i is
     # seen, map name to seq_i here once, rather than doing costly
@@ -582,11 +645,23 @@ def process_bamfile(em, int ascii_offset):
     t_check = time()
     for alignedread in bamfile:
         tid_mapped[alignedread.tid] = 1
-    # print >> sys.stderr, "DEBUG: first pass bamfile time: %s"%(timedelta(seconds = time()-t_check))
+    
+    #debug
+    print >> sys.stderr, "DEBUG (process_bamfile): first pass bamfile time: %s"%(timedelta(seconds = time()-t_check))
 
     bamfile = pysam.Samfile(em.current_bam_filename, mode)  # reopen file to reset.  seek(0) has problems? 
 
+    #Controlla questo passaggio (se è corretto)
     new_seq_i = len(sequence_i2sequence_name)
+    
+    #debug
+    print >> sys.stderr, "DEBUG (process_bamfile): new_seq_i = %s" %(new_seq_i)
+    
+    #Altro debug: cosa contiene em.base_coverages
+    print >> sys.stderr, "DEBUG (process_bamfile): len(em.base_coverages) = %s" %(len(em.base_coverages))
+    print >> sys.stderr, "DEBUG (process_bamfile): em.n_reads = %s" %(em.n_reads)
+    print >> sys.stderr, "DEBUG (process_bamfile): em.n_alignments = %s" %(em.n_alignments)
+    
     for tid, refname in enumerate(bamfile.references):
         # assert bamfile.getrname(tid) == refname # this is true
         if tid_mapped[tid] == 1:
@@ -596,6 +671,10 @@ def process_bamfile(em, int ascii_offset):
                 sequence_name2sequence_i[refname] =  seq_i
                 sequence_i2sequence_name.append(refname)
                 em.base_coverages.append(np.zeros(samfile_lengths[tid], dtype=np.uint32))
+                
+                #debug
+                #print >> sys.stderr, "DEBUG (process_bamfile): %s/%s (%s)" %(tid+1, len(bamfile.references), refname)
+                
             else:
                 seq_i = sequence_name2sequence_i[refname]
             tid2seq_i[tid] = seq_i
@@ -614,6 +693,14 @@ def process_bamfile(em, int ascii_offset):
             base_coverages_2d[seq_i, i] = base_coverage[i]
 
     alignedread_i = 0
+    
+#    sys.stderr.write("Debug em.n_alignments: %s\n" %(em.n_alignments))
+#    sys.stderr.flush()
+
+    #bwa non scrive dati come rlen o la sequenza nel caso in cui abbia più record per la read.
+    #allora mi dovrò memorizzare le varie rlen che ho visto
+    cdef dict my_rlen = {}
+    
     for alignedread in bamfile:
         #TODO: decide if it's better to assign first to typed variable, or assign directly to bamfile_data
         # tid = alignedread.tid
@@ -622,27 +709,64 @@ def process_bamfile(em, int ascii_offset):
         qname = qname_temp      # this extra assignment is necessary to go from python object to char*. (see Cython Language Basics)
         # is_reverse = alignedread.is_reverse
         # rlen = alignedread.rlen
+        
+#        #check su rlen
+#        rlen = alignedread.rlen
+#        
+#        if rlen != 0:
+#            #Allora, visto che vedo per la prima volta qname, memorizzo la sua rlen
+#            my_rlen[qname] = rlen
+#            
+#        else:
+#            #In questo caso guardo rlen della query che ho visto
+#            rlen = my_rlen[qname]
+
+        #Non ha molto senso usare rlen, perchè è la lunghezza della reads, e BWA puo mappare anche
+        #un pezzo di reads in fondo alla sequenza. Forse allora è meglio usare qlen = Length of the aligned query sequence
+        rlen = alignedread.qlen
+        
+        #Assicurati che la posizione dove inizia l'allineamento con la lunghezza della read non sia maggiore della
+        #lunghezza della sequenza
+        tid = alignedread.tid
+        t_length = samfile_lengths[tid]
+        
+        if alignedread.pos+rlen > t_length:
+            print >> sys.stderr, "DEBUG (process_bamfile): alignedread.pos (%s) + rlen (%s) = (%s) > t_length (%s)" %(alignedread.pos, rlen, alignedread.pos+rlen, t_length)
+            rlen = t_length - alignedread.pos
 
         read_i = atoi(qname)
         # read_i = int(qname_temp)
         reads_mapped[read_i] = 1
         seq_i = tid2seq_i[alignedread.tid]
-        coverage[seq_i] += <unsigned int>alignedread.rlen
+        
+        #coverage[seq_i] += <unsigned int>alignedread.rlen
+        coverage[seq_i] += <unsigned int>rlen
+        
         # base_coverage = em.base_coverages[seq_i]  # list lookup.  SLOW?
         # for i in range(alignedread.pos, alignedread.pos+alignedread.rlen):
         #     base_coverage[i] += 1
-        for i in range(alignedread.pos, alignedread.pos+alignedread.rlen):
-             base_coverages_2d[seq_i, i] += 1    # base_coverage[i] += 1
         
-            
+        #for i in range(alignedread.pos, alignedread.pos+alignedread.rlen):
+        for i in range(alignedread.pos, alignedread.pos+rlen):
+            base_coverages_2d[seq_i, i] += 1    # base_coverage[i] += 1
+        
+        #debug: stampo solo le prima 20 informazioni
+        if alignedread_i < 20 or alignedread_i > em.n_alignments-20:
+            sys.stderr.write("DEBUG (process_bamfile): processing %s/%s (%s,%s,%s,%s,%s,%s) tid:%s\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, alignedread.is_read2, rlen, alignedread.pos, alignedread.is_reverse, alignedread.tid))
+            sys.stderr.flush()
+        elif alignedread_i == 20:
+            sys.stderr.write("DEBUG (process_bamfile): ...\n")
+            sys.stderr.flush()
+        
         bamfile_data[alignedread_i, 0] = seq_i
         bamfile_data[alignedread_i, 1] = read_i
         bamfile_data[alignedread_i, 2] = alignedread.is_read2
-        bamfile_data[alignedread_i, 3] = alignedread.rlen
+        bamfile_data[alignedread_i, 3] = rlen
         bamfile_data[alignedread_i, 4] = alignedread.pos
         bamfile_data[alignedread_i, 5] = alignedread.is_reverse
 
         alignedread_i += 1
+        
     assert alignedread_i == bamfile_data.shape[0]
     em.bamfile_data = bamfile_data.copy()
     bamfile.close()
@@ -677,6 +801,9 @@ def reset_probN(em):
     cdef double length_thresh       = em.min_length_coverage      # percent length required
     cdef double percent_length_covered
     cdef int cullcount = 0
+    
+    print >> sys.stderr, "DEBUG (reset_probN): cov_thresh = %s" %(cov_thresh)
+    print >> sys.stderr, "DEBUG (reset_probN): length_thresh = %s" %(length_thresh)
     
     references_array = np.array(bamfile.references) # slicing these tuples is stupid-slow, for some reason.
     references_lengths = np.array(bamfile.lengths)

@@ -5,7 +5,8 @@
 
 Updated on ven  4 apr 2014, 15.25.03, CEST
 
-Cerco di cambiare il codice di emirge per utilizzare bwa al posto di bowtie
+Cerco di cambiare il codice di emirge per utilizzare bwa al posto di bowtie. I parametri
+sembrano essere suggeriti da questa discussione https://groups.google.com/forum/#!topic/express-users/XtK5VHgcmGM
 
 EMIRGE: Expectation-Maximization Iterative Reconstruction of Genes from the Environment
 Copyright (C) 2010-2012 Christopher S. Miller  (christopher.s.miller@ucdenver.edu)
@@ -74,8 +75,7 @@ import _emirge_amplicon as _emirge
 #BOWTIE_e  = 300
 
 #BOWTIE_ASCII_OFFSET = 33   # currently, bowtie writes quals with an ascii offset of 33
-BWA_ASCII_OFFSET = 33   # Anche BWA dovrebbe lavorare cosi
-
+BWA_ASCII_OFFSET = 0   # BWA già scala le qualità
 
 class Record:
     """
@@ -1033,8 +1033,12 @@ class EM(object):
         # these are used for single reads too.
         #shared_bowtie_params = "--phred%d-quals -t -p %s  -n 3 -l %s -e %s  --best --strata --all --sam --chunkmbs 128"%(self.reads_ascii_offset, self.n_cpus, BOWTIE_l, BOWTIE_e)
         
-        #Questi paremetri sono suggeriti da questa discussione
-        shared_bwa_params = "-t %s -P -a" %(self.n_cpus)
+        #Questi parametri sono suggeriti da questa discussione
+        #shared_bwa_params = "-t %s -P -a" %(self.n_cpus)
+        
+        #Proviamo così, anche se l'istruzione corretta sembra la precedente. In realtà
+        #così si evita di scrivere dei file enormi
+        shared_bwa_params = "-t %s -a" %(self.n_cpus)
 
         minins = max((self.insert_mean - 3*self.insert_sd), self.max_read_length)
         maxins = self.insert_mean + 3*self.insert_sd
@@ -1069,13 +1073,32 @@ class EM(object):
             sys.stderr.write("\tbwa command:\n")
             sys.stderr.write("\t%s\n"%bwa_command)
 
+        #basta lanciare bwa
         p = Popen(bwa_command, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
         p.wait()
         stderr_string = p.stderr.read()
-        self.n_alignments = self.get_n_alignments_from_bwa(stderr_string)
+        
+        #Questa stringa è lo stderr di bwa. Questo non da indicazioni sulle reads. Io direi
+        #che è il caso di stamparlo a video e poi lanciare un samtools flagstat per vedere
+        #quante reads ho allineato
+        sys.stderr.write("Bwa output:\n%s\n" %(stderr_string))
+        sys.stderr.flush()
+        
+        #Ale', qui lancio il samtools flagstat
+        cmd = "samtools flagstat %s" %(output_filename)
+        p = Popen(cmd, shell=True, stdout = PIPE, stderr = sys.stderr, close_fds=True)
+        p.wait()
+        
+        #Questo è l'output di flagstat
+        stdout_string = p.stdout.read()
+        
+        #Questo giro processo l'output di flagstat
+        self.n_alignments = self.get_n_alignments_from_bwa(stdout_string)
+        
         # re-print this to stdout, since we stole it from bwa
-        sys.stdout.write(stderr_string)
+        sys.stdout.write(stdout_string)
         sys.stdout.flush()
+        
         # and now put in separate bwa logfile
         of = open(bwa_logfile, 'w')
         of.write("\nBWA STDERR:\n")
@@ -1093,7 +1116,13 @@ class EM(object):
 
         assert self.iterdir != '/'
         for filename in os.listdir(self.iterdir):
-            assert(len(os.path.basename(bwa_index)) >= 20)  # weak check that I'm not doing anything dumb.
+            #Questa istruzione si aassicura di avere in mano un nome di un file tipo 'bowtie.index.iter.00'
+            #di lunghezza 20. Siccome io lavoro con bwa, do altri nomi ai file, per cui
+            #assert(len(os.path.basename(bwa_index)) >= 20)  # weak check that I'm not doing anything dumb.
+            
+            #Questo è la lunghezza tipo del nome del file 'bwa.index.iter.00'
+            assert(len(os.path.basename(bwa_index)) >= 17)  # weak check that I'm not doing anything dumb.
+            
             if os.path.basename(bwa_index) in filename:
                 os.remove(os.path.join(self.iterdir, filename))
 
@@ -1106,29 +1135,58 @@ class EM(object):
         OUT: does some re to get number of unique reads mapped,
              returns as int
 
-        #####  sample stderr for paired-end:   #####
-        Time loading reference: 00:00:00
-        Time loading forward index: 00:00:00
-        Time loading mirror index: 00:00:00
-        Seeded quality full-index search: 00:06:50
-        # reads processed: 897895
-        # reads with at least one reported alignment: 720465 (80.24%)
-        # reads that failed to align: 177430 (19.76%)
-        Reported 19244466 paired-end alignments to 1 output stream(s)
+        #####  sample output di bwa mem   #####
+        [M::main_mem] read 2397648 sequences (235429810 bp)...
+        [M::mem_pestat] # candidate unique pairs for (FF, FR, RF, RR): (4, 6380, 0, 1)
+        [M::mem_pestat] skip orientation FF as there are not enough pairs
+        [M::mem_pestat] analyzing insert size distribution for orientation FR...
+        [M::mem_pestat] (25, 50, 75) percentile: (72, 95, 120)
+        [M::mem_pestat] low and high boundaries for computing mean and std.dev: (1, 216)
+        [M::mem_pestat] mean and std.dev: (95.05, 33.72)
+        [M::mem_pestat] low and high boundaries for proper pairs: (1, 264)
+        [M::mem_pestat] skip orientation RF as there are not enough pairs
+        [M::mem_pestat] skip orientation RR as there are not enough pairs
+        [main] Version: 0.7.6a-r433
+        [main] CMD: bwa mem -t 64 -a /storage/cozzip/Programmi/EMIRGE/SSURef_111_candidate_db /scratch/2f75204b9f-emirge_amplicon_bwa/run/emirge_tmp_reads_1.fastq /scratch/2f75204b9f-emirge_amplicon_bwa/run/emirge_tmp_reads_2.fastq
+        [main] Real time: 387.340 sec; CPU: 19579.909 sec
+
+        In realtà sarebbe il caso di leggere l'output di samtools flagstat
+        
+        ##### sample output di samtools flagstat #####
+        
+        29724797 + 0 in total (QC-passed reads + QC-failed reads)
+        0 + 0 duplicates
+        29724797 + 0 mapped (100.00%:-nan%)
+        29724797 + 0 paired in sequencing
+        14010328 + 0 read1
+        15714469 + 0 read2
+        2425018 + 0 properly paired (8.16%:-nan%)
+        29712512 + 0 with itself and mate mapped
+        12285 + 0 singletons (0.04%:-nan%)
+        27724085 + 0 with mate mapped to a different chr
+        47022 + 0 with mate mapped to a different chr (mapQ>=5)
+
         """
         
-        #FIXME: probabilmente questa funzione non funzionerà più
+        #debug
+        #print "stderr_string: <%s>" %(stderr_string)
+        
+        #Questa funzione è stata adattata per lavorare sul flagstat
         try:
-            r = re.findall(r'Reported ([0-9]+) (paired-end )?alignments', stderr_string)
-            if r[0][1] != '': # "paired-end" string matched -- two lines in samfile per paired-end aln
-                return int(r[0][0])*2
-            else:             # single-end -- one line in samfile per alignment
-                return int(r[0][0])
+            r = re.findall(r'([0-9]+) \+ 0 paired in sequencing', stderr_string)
+            #Ho un solo valore che tiene conto di read1 e read2. Ma emirge lo moltiplicava
+            #per due nel caso paired. Perchè? ho due stringhe?
+            return int(r[0])
+                
         except IndexError:
             print >> sys.stderr, "OOPS, we didn't get number of reads from bwa:"
             print >> sys.stderr, stderr_string
             print >> sys.stderr, r
             raise
+        
+        except Exception, message:
+            print stderr_string
+            raise Exception, message
 
 
     def calc_likelihoods(self):
@@ -1261,7 +1319,12 @@ def do_initial_mapping(em, working_dir, options):
     option_strings.extend([options.fastq_reads_1, nicestring, reads_ascii_offset, options.processors])
     samtools_cmd    = "samtools view -S -h -u -b -F 0x0004 -"  # -F instead of piping to awk?    |  awk '{if ($3!="*") print }'
     
-    shared_bwa_params = "-t %s -P -a" %(options.processors)
+    #Questa sembra essere una soluzione per fare un output analogo a bowtie con bwa
+    #shared_bwa_params = "-t %s -P -a" %(options.processors)
+    
+    #Proviamo così, anche se l'istruzione corretta sembra la precedente. In realtà
+    #così si evita di scrivere dei file enormi
+    shared_bwa_params = "-t %s -a" %(options.processors)
 
     # PAIRED END MAPPING
     if options.fastq_reads_2 is not None:
@@ -1277,15 +1340,41 @@ def do_initial_mapping(em, working_dir, options):
         cmd = "{nicestring} bwa mem {shared_bwa_params} {bwa_index} {reads1_filepath} | {samtools_cmd} > {output_filename}.u.bam".format(nicestring=nicestring, shared_bwa_params=shared_bwa_params, bwa_index=options.bwa_db, reads1_filepath=options.fastq_reads_1, samtools_cmd=samtools_cmd, output_filename=bampath_prefix)
 
     sys.stderr.write("Performing initial mapping with command:\n%s\n"%cmd)
-    p = Popen(cmd, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
+    
+    #debug: salto il mapping iniziale, mi fido di quello che c'è. Ma eseguo comunque un comando
+    p = Popen("date", shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
     p.wait()
     stderr_string = p.stderr.read()
-    em.n_alignments = em.get_n_alignments_from_bwa(stderr_string)
+    
+    #Questa stringa è lo stderr di bwa. Questo non da indicazioni sulle reads. Io direi
+    #che è il caso di stamparlo a video e poi lanciare un samtools flagstat per vedere
+    #quante reads ho allineato
+    sys.stderr.write("Bwa output:\n%s\n" %(stderr_string))
+    sys.stderr.flush()
+    
+    #Provo a passare il file fatto con bowtie, per capire se è il tipi di output che da fastio a emirge
+    #Occhio che ho anche bwa nel path
+#    tmp_dir, tmp_file = os.path.split(bampath_prefix)
+#    tmp_file = tmp_file.replace("bwa", "bowtie")
+#    bampath_prefix = os.path.join(tmp_dir, tmp_file)
+    
+    #Ale', qui lancio il samtools flagstat
+    cmd = "samtools flagstat %s.u.bam" %(bampath_prefix)    
+    p = Popen(cmd, shell=True, stdout = PIPE, stderr = sys.stderr, close_fds=True)
+    p.wait()
+    
+    #Questo è l'output di flagstat
+    stdout_string = p.stdout.read()
+    
+    #Questo giro processo l'output di flagstat
+    em.n_alignments = em.get_n_alignments_from_bwa(stdout_string)
     # re-print this to stdout, since we stole it.
-    sys.stdout.write(stderr_string)
+    sys.stdout.write(stdout_string)
     sys.stdout.flush()
-
+    
+    #linea originale
     return bampath_prefix+".u.bam"
+    
 
 def resume(working_dir, options):
     """
@@ -1492,7 +1581,10 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
 
     sys.stdout.write("imported _emirge C functions from: %s\n"%(_emirge.__file__))
     sys.stdout.write("Command:\n")
-    sys.stdout.write(' '.join([__file__]+argv))
+    
+    #debug
+    #sys.stdout.write(' '.join([__file__]+argv))
+    
     sys.stdout.write('\n\n')
     total_start_time = time()
     sys.stdout.write("EMIRGE started at %s\n"%(ctime()))
@@ -1544,10 +1636,17 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
 
         if not os.path.exists(working_dir):
             os.mkdir(working_dir)
+            
         else:
             if len(os.listdir(working_dir)) > 1:   # allow 1 file in case log file is redirected here.
                 print >> sys.stderr, os.listdir(working_dir)
-                parser.error("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one."%working_dir)
+                
+                #Debug: Non esco fuori dal programma, nel caso in cui la cartella esista gia
+                #parser.error("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one."%working_dir)
+                
+                #FIXME: sistema questa istruzione per ripristinare l'uscita regolare quano esiste già questa cartella
+                sys.stderr.write("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one.\n" %(working_dir))
+                sys.stderr.flush()
 
     # clean up options to be absolute paths
     for o in ["fastq_reads_1", "fastq_reads_2", "fasta_db", "bwa_db", "mapping"]:
