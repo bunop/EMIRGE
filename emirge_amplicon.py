@@ -1341,8 +1341,7 @@ def do_initial_mapping(em, working_dir, options):
 
     sys.stderr.write("Performing initial mapping with command:\n%s\n"%cmd)
     
-    #debug: salto il mapping iniziale, mi fido di quello che c'è. Ma eseguo comunque un comando
-    p = Popen("date", shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
+    p = Popen(cmd, shell=True, stdout = sys.stdout, stderr = PIPE, close_fds=True)
     p.wait()
     stderr_string = p.stderr.read()
     
@@ -1640,13 +1639,8 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
         else:
             if len(os.listdir(working_dir)) > 1:   # allow 1 file in case log file is redirected here.
                 print >> sys.stderr, os.listdir(working_dir)
+                parser.error("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one."%working_dir)
                 
-                #Debug: Non esco fuori dal programma, nel caso in cui la cartella esista gia
-                #parser.error("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one."%working_dir)
-                
-                #FIXME: sistema questa istruzione per ripristinare l'uscita regolare quano esiste già questa cartella
-                sys.stderr.write("Directory not empty: %s\nIt is recommended you run emirge in a new directory each run; delete this directory or specifiy a new one.\n" %(working_dir))
-                sys.stderr.flush()
 
     # clean up options to be absolute paths
     for o in ["fastq_reads_1", "fastq_reads_2", "fasta_db", "bwa_db", "mapping"]:

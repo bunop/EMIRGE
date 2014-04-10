@@ -311,14 +311,12 @@ def _calc_probN(em):
         rlen = bamfile_data[alignedread_i, 3]
         pos = bamfile_data[alignedread_i, 4]
         is_reverse= bamfile_data[alignedread_i, 5]
-
-        #debug
         
         #debug: stampo solo le prima 20 informazioni
         #if alignedread_i < 20:
         #if read_i == 1195:
-        sys.stderr.write("DEBUG (_calc_probN): processing %s/%s (%s,%s,%s,%s,%s,%s)\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, pair_i, rlen, pos,is_reverse))
-        sys.stderr.flush()
+#        sys.stderr.write("DEBUG (_calc_probN): processing %s/%s (%s,%s,%s,%s,%s,%s)\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, pair_i, rlen, pos,is_reverse))
+#        sys.stderr.flush()
         
         reads_seen_this_round[read_i] = 1
         # find weight
@@ -380,8 +378,8 @@ def _calc_probN(em):
 #        print >> sys.stderr, "DEBUG: Sono stato qui (fine): %s" %(alignedread_i)
 #        sys.stderr.flush()
 
-        print >> sys.stderr, "DEBUG: Sono stato qui (len(probN[seq_i]): %s, seq_id = %s) (4): %s" %(len(probN[seq_i]), seq_i, alignedread_i)
-        sys.stderr.flush()
+#        print >> sys.stderr, "DEBUG: Sono stato qui (len(probN[seq_i]): %s, seq_id = %s) (4): %s" %(len(probN[seq_i]), seq_i, alignedread_i)
+#        sys.stderr.flush()
 
     td = timedelta(seconds = time()-loop_t0)
     
@@ -751,12 +749,12 @@ def process_bamfile(em, int ascii_offset):
             base_coverages_2d[seq_i, i] += 1    # base_coverage[i] += 1
         
         #debug: stampo solo le prima 20 informazioni
-        if alignedread_i < 20 or alignedread_i > em.n_alignments-20:
-            sys.stderr.write("DEBUG (process_bamfile): processing %s/%s (%s,%s,%s,%s,%s,%s) tid:%s\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, alignedread.is_read2, rlen, alignedread.pos, alignedread.is_reverse, alignedread.tid))
-            sys.stderr.flush()
-        elif alignedread_i == 20:
-            sys.stderr.write("DEBUG (process_bamfile): ...\n")
-            sys.stderr.flush()
+#        if alignedread_i < 20 or alignedread_i > em.n_alignments-20:
+#            sys.stderr.write("DEBUG (process_bamfile): processing %s/%s (%s,%s,%s,%s,%s,%s) tid:%s\n" %(alignedread_i+1, em.n_alignments, seq_i, read_i, alignedread.is_read2, rlen, alignedread.pos, alignedread.is_reverse, alignedread.tid))
+#            sys.stderr.flush()
+#        elif alignedread_i == 20:
+#            sys.stderr.write("DEBUG (process_bamfile): ...\n")
+#            sys.stderr.flush()
         
         bamfile_data[alignedread_i, 0] = seq_i
         bamfile_data[alignedread_i, 1] = read_i
