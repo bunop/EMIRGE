@@ -1,4 +1,17 @@
 """
+
+#################################################################################
+#                                                                               #
+#                                 WARNINGS!!                                    #
+#                                                                               #
+# This version of emirge_amplicon.py was modified in order to exploit bwa       #
+# aligner instead of bowtie. This is an un-official branch of the original      #
+# emirge project (https://github.com/csmiller/EMIRGE). This code had never      #
+# been tested at the moment, please refer to the original project to analyze    #
+# 16S data.                                                                     #
+#                                                                               #
+#################################################################################
+
 _emirge_amplicon.pyx contains helper cython functions for emirge_amplicon.py
 
 EMIRGE: Expectation-Maximization Iterative Reconstruction of Genes from the Environment

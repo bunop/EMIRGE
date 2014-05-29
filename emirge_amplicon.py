@@ -3,6 +3,20 @@
 
 """
 
+Updated on gio 29 mag 2014, 10.49.48, CEST
+
+#################################################################################
+#                                                                               #
+#                                 WARNINGS!!                                    #
+#                                                                               #
+# This version of emirge_amplicon.py was modified in order to exploit bwa       #
+# aligner instead of bowtie. This is an un-official branch of the original      #
+# emirge project (https://github.com/csmiller/EMIRGE). This code had never      #
+# been tested at the moment, please refer to the original project to analyze    #
+# 16S data.                                                                     #
+#                                                                               #
+#################################################################################
+
 Updated on ven  4 apr 2014, 15.25.03, CEST
 
 Cerco di cambiare il codice di emirge per utilizzare bwa al posto di bowtie. I parametri
@@ -30,7 +44,21 @@ for help, type:
 python emirge_amplicon.py --help
 """
 USAGE = \
-"""usage: %prog DIR <required_parameters> [options]
+"""
+
+#################################################################################
+#                                                                               #
+#                                 WARNINGS!!                                    #
+#                                                                               #
+# This version of emirge_amplicon.py was modified in order to exploit bwa       #
+# aligner instead of bowtie. This is an un-official branch of the original      #
+# emirge project (https://github.com/csmiller/EMIRGE). This code had never      #
+# been tested at the moment, please refer to the original project to analyze    #
+# 16S data.                                                                     #
+#                                                                               #
+#################################################################################
+
+usage: %prog DIR <required_parameters> [options]
 
 This version of EMIRGE (%prog) attempts to reconstruct rRNA SSU genes
 from Illumina amplicon data.  It can handle up to a few million rRNA
@@ -76,6 +104,23 @@ import _emirge_amplicon as _emirge
 
 #BOWTIE_ASCII_OFFSET = 33   # currently, bowtie writes quals with an ascii offset of 33
 BWA_ASCII_OFFSET = 0   # BWA già scala le qualità
+
+WARN_MESSAGE = """
+#################################################################################
+#                                                                               #
+#                                 WARNINGS!!                                    #
+#                                                                               #
+# This version of emirge_amplicon.py was modified in order to exploit bwa       #
+# aligner instead of bowtie. This is an un-official branch of the original      #
+# emirge project (https://github.com/csmiller/EMIRGE). This code had never      #
+# been tested at the moment, please refer to the original project to analyze    #
+# 16S data.                                                                     #
+#                                                                               #
+#################################################################################
+"""
+
+#Warning message (this version of emirge amplicon is not the original project) 
+sys.stderr.write(WARN_MESSAGE)
 
 class Record:
     """
@@ -1693,7 +1738,6 @@ PloS one 8: e56018. doi:10.1371/journal.pone.0056018.\n\n""")
 
 if __name__ == '__main__':
     main()
-
 
 
 def f(bamfile):
